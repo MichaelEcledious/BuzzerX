@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BuzzerX — Host Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+<style>
+  :root { --neon:#00f5ff; --gold:#ffd700; --red:#ff2d55; --green:#00ff88; --bg:#050a14; --card:#0d1626; --border:rgba(0,245,255,0.15); }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{min-height:100vh;background:var(--bg);font-family:'Exo 2',sans-serif;color:white;overflow-x:hidden;}
+  body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,245,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,245,255,0.03) 1px,transparent 1px);background-size:60px 60px;animation:gridMove 20s linear infinite;pointer-events:none;}
+  @keyframes gridMove{to{transform:translateY(60px);}}
+
+  .header{display:flex;align-items:center;justify-content:space-between;padding:16px 32px;background:rgba(5,10,20,0.95);border-bottom:1px solid var(--border);backdrop-filter:blur(10px);position:sticky;top:0;z-index:100;}
+  .logo{font-family:'Orbitron',sans-serif;color:var(--neon);font-size:1.3rem;font-weight:900;letter-spacing:3px;}
+  .host-badge{background:linear-gradient(135deg,rgba(255,215,0,0.15),rgba(255,215,0,0.05));border:1px solid rgba(255,215,0,0.3);border-radius:50px;padding:6px 18px;color:var(--gold);font-size:0.8rem;letter-spacing:2px;font-weight:600;}
+  .btn-leave{background:transparent;border:1px solid rgba(255,45,85,0.3);color:var(--red);padding:8px 16px;border-radius:8px;font-family:'Exo 2',sans-serif;font-size:0.8rem;cursor:pointer;transition:all 0.3s;text-decoration:none;}
+  .btn-leave:hover{background:rgba(255,45,85,0.1);border-color:var(--red);}
+
+  .dashboard{display:grid;grid-template-columns:1fr 380px;gap:24px;padding:24px 32px;min-height:calc(100vh - 70px);}
+
+  /* Left: Control panel */
+  .control-panel{display:flex;flex-direction:column;gap:20px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;position:relative;overflow:hidden;}
+  .card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(0,245,255,0.3),transparent);}
+  .card-title{font-family:'Orbitron',sans-serif;font-size:0.75rem;font-weight:700;color:rgba(0,245,255,0.6);letter-spacing:3px;text-transform:uppercase;margin-bottom:20px;}
+
+  /* Buzzer status */
+  .buzz-status{text-align:center;padding:30px 20px;}
+  .buzz-indicator{width:120px;height:120px;border-radius:50%;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;font-size:3rem;transition:all 0.5s;border:3px solid;}
+  .buzz-indicator.idle{background:radial-gradient(circle,#1a2a1a,#0a140a);border-color:rgba(0,255,136,0.3);box-shadow:0 0 30px rgba(0,255,136,0.1);}
+  .buzz-indicator.triggered{background:radial-gradient(circle,#2a2000,#141000);border-color:var(--gold);box-shadow:0 0 60px rgba(255,215,0,0.4);animation:winPulse 0.8s ease-in-out infinite;}
+  @keyframes winPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+  .buzz-winner-name{font-family:'Orbitron',sans-serif;font-size:1.8rem;font-weight:900;color:var(--gold);text-shadow:0 0 30px rgba(255,215,0,0.5);margin-bottom:6px;}
+  .buzz-winner-email{color:rgba(255,255,255,0.4);font-size:0.85rem;margin-bottom:20px;}
+  .buzz-status-text{color:rgba(255,255,255,0.4);font-size:0.9rem;letter-spacing:1px;}
+
+  /* Control buttons */
+  .controls{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .btn{padding:14px 20px;border-radius:10px;font-family:'Exo 2',sans-serif;font-size:0.9rem;font-weight:700;letter-spacing:1px;cursor:pointer;transition:all 0.3s;border:1px solid;display:flex;align-items:center;justify-content:center;gap:8px;}
+  .btn:disabled{opacity:0.3;cursor:not-allowed;}
+  .btn-reset{background:rgba(0,255,136,0.08);border-color:rgba(0,255,136,0.3);color:var(--green);}
+  .btn-reset:hover:not(:disabled){background:rgba(0,255,136,0.15);border-color:var(--green);box-shadow:0 0 20px rgba(0,255,136,0.15);}
+  .btn-award{background:rgba(255,215,0,0.08);border-color:rgba(255,215,0,0.3);color:var(--gold);}
+  .btn-award:hover:not(:disabled){background:rgba(255,215,0,0.15);border-color:var(--gold);box-shadow:0 0 20px rgba(255,215,0,0.15);}
+  .btn-deduct{background:rgba(255,45,85,0.08);border-color:rgba(255,45,85,0.3);color:var(--red);}
+  .btn-deduct:hover:not(:disabled){background:rgba(255,45,85,0.15);border-color:var(--red);box-shadow:0 0 20px rgba(255,45,85,0.15);}
+  .btn-full{grid-column:1/-1;}
+
+  /* Stats */
+  .stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .stat-box{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:12px;padding:16px;text-align:center;}
+  .stat-num{font-family:'Orbitron',sans-serif;font-size:1.8rem;font-weight:900;line-height:1;}
+  .stat-label{font-size:0.7rem;color:rgba(255,255,255,0.3);letter-spacing:2px;text-transform:uppercase;margin-top:6px;}
+  .stat-num.neon{color:var(--neon);text-shadow:0 0 20px rgba(0,245,255,0.4);}
+  .stat-num.gold{color:var(--gold);}
+  .stat-num.green{color:var(--green);}
+
+  /* Log */
+  .log-list{display:flex;flex-direction:column;gap:6px;max-height:160px;overflow-y:auto;}
+  .log-item{font-size:0.8rem;color:rgba(255,255,255,0.4);padding:6px 10px;background:rgba(255,255,255,0.02);border-radius:6px;border-left:2px solid rgba(0,245,255,0.2);}
+  .log-item.win{border-left-color:var(--gold);color:rgba(255,215,0,0.7);}
+  .log-item.join{border-left-color:var(--green);color:rgba(0,255,136,0.6);}
+  .log-item.leave{border-left-color:var(--red);color:rgba(255,45,85,0.5);}
+  .log-time{color:rgba(255,255,255,0.2);font-size:0.7rem;margin-right:6px;}
+  ::-webkit-scrollbar{width:4px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:rgba(0,245,255,0.2);border-radius:2px;}
+
+  /* Right: Players list */
+  .players-panel{display:flex;flex-direction:column;}
+  .players-list{display:flex;flex-direction:column;gap:8px;overflow-y:auto;max-height:calc(100vh - 150px);}
+  .player-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:14px 16px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;transition:all 0.3s;}
+  .player-card:hover{background:rgba(255,255,255,0.05);border-color:rgba(0,245,255,0.15);}
+  .player-card.buzzed{border-color:var(--gold);background:rgba(255,215,0,0.04);box-shadow:0 0 20px rgba(255,215,0,0.08);}
+  .player-avatar{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;color:#000;flex-shrink:0;}
+  .player-details .p-name{font-weight:600;font-size:0.95rem;}
+  .player-details .p-email{font-size:0.75rem;color:rgba(255,255,255,0.35);margin-top:2px;}
+  .player-score-wrap{text-align:right;}
+  .player-score{font-family:'Orbitron',sans-serif;font-size:1.4rem;font-weight:900;color:var(--gold);}
+  .player-score-label{font-size:0.65rem;color:rgba(255,255,255,0.25);letter-spacing:1px;}
+  .player-actions{display:flex;gap:6px;margin-top:8px;}
+  .p-btn{padding:4px 10px;border-radius:6px;font-size:0.7rem;font-weight:700;cursor:pointer;border:1px solid;transition:all 0.2s;font-family:'Exo 2',sans-serif;}
+  .p-btn-award{background:rgba(255,215,0,0.1);border-color:rgba(255,215,0,0.3);color:var(--gold);}
+  .p-btn-award:hover{background:rgba(255,215,0,0.2);}
+  .p-btn-deduct{background:rgba(255,45,85,0.1);border-color:rgba(255,45,85,0.3);color:var(--red);}
+  .p-btn-deduct:hover{background:rgba(255,45,85,0.2);}
+  .p-btn-kick{background:rgba(100,100,100,0.1);border-color:rgba(100,100,100,0.3);color:rgba(255,255,255,0.4);}
+  .p-btn-kick:hover{background:rgba(255,45,85,0.1);border-color:rgba(255,45,85,0.3);color:var(--red);}
+
+  .empty-state{text-align:center;padding:60px 20px;color:rgba(255,255,255,0.2);}
+  .empty-state .es-icon{font-size:3rem;margin-bottom:12px;}
+  .empty-state p{font-size:0.85rem;letter-spacing:1px;}
+
+  /* Buzzer fired flash */
+  @keyframes flashBg{0%{background:rgba(255,215,0,0.05)}50%{background:rgba(255,215,0,0.12)}100%{background:rgba(255,215,0,0.05)}}
+  .flash{animation:flashBg 0.5s ease 3;}
+</style>
+</head>
+<body>
+<header class="header">
+  <div class="logo">BUZZERX</div>
+  <div class="host-badge">👑 HOST PANEL</div>
+  <a href="/leave" class="btn-leave">✕ Leave</a>
+</header>
+
+<div class="dashboard">
+  <!-- Left -->
+  <div class="control-panel">
+    <!-- Buzz Status -->
+    <div class="card buzz-status" id="buzzCard">
+      <div class="card-title">Buzz Status</div>
+      <div class="buzz-indicator idle" id="buzzIndicator">⚡</div>
+      <div class="buzz-winner-name" id="buzzWinnerName">—</div>
+      <div class="buzz-winner-email" id="buzzWinnerEmail"></div>
+      <div class="buzz-status-text" id="buzzStatusText">Waiting for buzz...</div>
+    </div>
+
+    <!-- Controls -->
+    <div class="card">
+      <div class="card-title">Controls</div>
+      <div class="controls">
+        <button class="btn btn-reset btn-full" onclick="resetBuzzer()">🔄 RESET BUZZER</button>
+        <button class="btn btn-award" id="btnAward" onclick="awardPoint()" disabled>✅ +1 POINT</button>
+        <button class="btn btn-deduct" id="btnDeduct" onclick="deductPoint()" disabled>❌ −1 POINT</button>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="card">
+      <div class="card-title">Live Stats</div>
+      <div class="stats-row">
+        <div class="stat-box"><div class="stat-num neon" id="statPlayers">0</div><div class="stat-label">Players</div></div>
+        <div class="stat-box"><div class="stat-num gold" id="statRounds">0</div><div class="stat-label">Rounds</div></div>
+        <div class="stat-box"><div class="stat-num green" id="statLeader">—</div><div class="stat-label" style="font-size:0.6rem">Top Score</div></div>
+      </div>
+    </div>
+
+    <!-- Event Log -->
+    <div class="card">
+      <div class="card-title">Event Log</div>
+      <div class="log-list" id="logList">
+        <div class="log-item"><span class="log-time">--:--</span>Host panel ready</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Players -->
+  <div class="players-panel">
+    <div class="card" style="flex:1;">
+      <div class="card-title">Players (<span id="playerCount">0</span>)</div>
+      <div class="players-list" id="playersList">
+        <div class="empty-state">
+          <div class="es-icon">🎮</div>
+          <p>No players yet<br>Share the link to join</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const hostName = "{{ name }}";
+const socket = io();
+let currentWinnerSid = null;
+let players = [];
+let rounds = 0;
+
+const avatarColors = ['#00f5ff','#ffd700','#ff2d55','#00ff88','#bf5af2','#ff9f0a','#30d158','#64d2ff'];
+
+socket.on('connect',()=>{
+  socket.emit('register_player',{name:hostName,email:'',role:'host'});
+  addLog('Connected as host','');
+});
+socket.on('players_update',(d)=>{
+  players = d.players;
+  renderPlayers();
+  updateStats();
+});
+socket.on('buzz_winner',(d)=>{
+  currentWinnerSid = d.sid;
+  document.getElementById('buzzIndicator').className='buzz-indicator triggered';
+  document.getElementById('buzzIndicator').textContent='🏆';
+  document.getElementById('buzzWinnerName').textContent=d.name;
+  document.getElementById('buzzWinnerEmail').textContent=d.email;
+  document.getElementById('buzzStatusText').textContent='Buzzed in first!';
+  document.getElementById('buzzCard').classList.add('flash');
+  setTimeout(()=>document.getElementById('buzzCard').classList.remove('flash'),1500);
+  document.getElementById('btnAward').disabled=false;
+  document.getElementById('btnDeduct').disabled=false;
+  rounds++;
+  document.getElementById('statRounds').textContent=rounds;
+  addLog(`${d.name} buzzed in!`,'win');
+});
+socket.on('buzzer_reset',()=>{
+  currentWinnerSid=null;
+  document.getElementById('buzzIndicator').className='buzz-indicator idle';
+  document.getElementById('buzzIndicator').textContent='⚡';
+  document.getElementById('buzzWinnerName').textContent='—';
+  document.getElementById('buzzWinnerEmail').textContent='';
+  document.getElementById('buzzStatusText').textContent='Waiting for buzz...';
+  document.getElementById('btnAward').disabled=true;
+  document.getElementById('btnDeduct').disabled=true;
+  addLog('Buzzer reset','');
+});
+socket.on('player_joined',(d)=>{ addLog(`${d.name} joined (${d.count} total)`,'join'); });
+socket.on('player_left',(d)=>{ addLog(`${d.name} left (${d.count} remaining)`,'leave'); });
+socket.on('score_update',(d)=>{ addLog(`${d.name}: score → ${d.score}`,''); updateStats(); });
+
+function resetBuzzer(){ socket.emit('reset_buzzer'); }
+function awardPoint(){ if(currentWinnerSid) socket.emit('award_point',{sid:currentWinnerSid}); }
+function deductPoint(){ if(currentWinnerSid) socket.emit('deduct_point',{sid:currentWinnerSid}); }
+function kickPlayer(sid){ if(confirm('Remove this player?')) socket.emit('kick_player',{sid}); }
+
+function renderPlayers(){
+  const list=document.getElementById('playersList');
+  document.getElementById('playerCount').textContent=players.length;
+  if(!players.length){
+    list.innerHTML='<div class="empty-state"><div class="es-icon">🎮</div><p>No players yet<br>Share the link to join</p></div>';
+    return;
+  }
+  // Sort by score
+  const sorted=[...players].sort((a,b)=>b.score-a.score);
+  list.innerHTML=sorted.map((p,i)=>{
+    const color=avatarColors[i%avatarColors.length];
+    const buzzedClass=p.buzzed?'buzzed':'';
+    const medal=i===0&&p.score>0?'🥇':i===1&&p.score>0?'🥈':i===2&&p.score>0?'🥉':'';
+    return `<div class="player-card ${buzzedClass}" id="pc-${p.sid}">
+      <div class="player-avatar" style="background:linear-gradient(135deg,${color},${color}88)">${p.name[0].toUpperCase()}</div>
+      <div class="player-details">
+        <div class="p-name">${medal} ${p.name}</div>
+        <div class="p-email">${p.email}</div>
+        <div class="player-actions">
+          <button class="p-btn p-btn-award" onclick="awardTo('${p.sid}')">+1</button>
+          <button class="p-btn p-btn-deduct" onclick="deductFrom('${p.sid}')">−1</button>
+          <button class="p-btn p-btn-kick" onclick="kickPlayer('${p.sid}')">Kick</button>
+        </div>
+      </div>
+      <div class="player-score-wrap">
+        <div class="player-score">${p.score}</div>
+        <div class="player-score-label">pts</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function awardTo(sid){ socket.emit('award_point',{sid}); }
+function deductFrom(sid){ socket.emit('deduct_point',{sid}); }
+
+function updateStats(){
+  document.getElementById('statPlayers').textContent=players.length;
+  if(players.length){
+    const top=players.reduce((a,b)=>b.score>a.score?b:a);
+    document.getElementById('statLeader').textContent=top.score>0?top.score:'0';
+  } else {
+    document.getElementById('statLeader').textContent='—';
+  }
+}
+
+function addLog(msg,type){
+  const now=new Date();
+  const t=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
+  const list=document.getElementById('logList');
+  const item=document.createElement('div');
+  item.className='log-item'+(type?' '+type:'');
+  item.innerHTML=`<span class="log-time">${t}</span>${msg}`;
+  list.insertBefore(item,list.firstChild);
+  if(list.children.length>50) list.lastChild.remove();
+}
+</script>
+</body>
+</html>
